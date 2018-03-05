@@ -1,5 +1,5 @@
 from __future__ import print_function
-import keras
+import keras, os, tables
 import numpy as np
 import matplotlib.pyplot as plt
 from keras.datasets import mnist
@@ -12,9 +12,9 @@ from keras.layers import LeakyReLU
 
 class GAN():
     def __init__(self):
-        self.img_rows = 28 
-        self.img_cols = 28
-        self.channels = 1
+        self.img_rows =  512
+        self.img_cols = 512
+        self.channels = 3
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
 
         optimizer = Adam(0.0002, 0.5)
@@ -91,7 +91,7 @@ class GAN():
     def train(self, epochs, batch_size=128, save_interval=50):
 
         # Load the dataset
-        (X_train, _), (_, _) = mnist.load_data()
+        X_train = load_dataset()
 
         # Rescale -1 to 1
         X_train = (X_train.astype(np.float32) - 127.5) / 127.5
@@ -156,20 +156,70 @@ class GAN():
         #         axs[i,j].axis('off')
         #         cnt += 1
         plt.imshow(gen_imgs[0, :, :, 0], cmap='gray')
-        plt.savefig("images/mnist_%d.png" % (epoch / save_interval))
+        plt.savefig("images/%d.png" % (epoch / save_interval))
         plt.close()
+
+def generate_dataset():
+    import os, glob
+    import numpy as np
+    from PIL import Image
+    import matplotlib.pyplot as plt
+    FOLDER = "car_images/"
+    FILENAME = "car_dataset.h5"
+    IMG_WIDTH = 512
+    IMG_HEIGHT = 512
+    TARGET_SIZE = 5000
+    os.chdir(ROOT)
+    f = tables.open_file(FILENAME, mode='w')
+    atom = tables.Float64Atom()
+    dataset = f.create_earray(f.root, 'data', atom, (0, 3, IMG_WIDTH, IMG_HEIGHT))
+    
+    os.chdir(ROOT + "/" + FOLDER)
+    count = 0
+    for f in glob.glob("**/*.png", recursive=True):
+        img = get_rgb_from_rgba_img(f)
+        count += 1
+        print("%d : %s" % (count, f))
+        img = img.resize((IMG_WIDTH, IMG_HEIGHT))
+        arr = np.asarray(img)
+        arr = np.reshape(arr, (1, arr.shape[2], arr.shape[1], arr.shape[0]))
+        dataset.append(arr[:,0:-1,:,:])
+
+    f.close()
+    return load_dataset()
+
+def load_dataset():
+    FILENAME = "car_dataset.h5"
+    os.chdir(ROOT)
+    try:
+        f = tables.open_file(FILENAME, mode='r')
+        dataset = f.root.data.read()
+        f.close()
+        return dataset
+    except IOError as e:
+        print(e)
+        return generate_dataset()
+
+def get_rgb_from_rgba_img(img_path):
+    from PIL import Image
+    png = Image.open(img_path).convert('RGBA')
+    background = Image.new('RGBA', png.size, (255,255,255))
+    alpha_composite = Image.alpha_composite(background, png)
+    return alpha_composite
 
 def generate_video():
     import glob, os, subprocess
     os.chdir("images")
     subprocess.call([
-        'ffmpeg', '-start_number', '1', '-framerate', '10', '-i', 'mnist_%d.png', '-r', '30', '-pix_fmt', 'yuv420p',
+        'ffmpeg', '-start_number', '1', '-framerate', '10', '-i', '%d.png', '-r', '30', '-pix_fmt', 'yuv420p',
         'mnist_gan.mp4'
     ])
     # for file_name in glob.glob("*.png"):
     #    os.remove(file_name)
 
 if __name__ == '__main__':
+    ROOT = os.getcwd()
+    # dataset = load_dataset()
     gan = GAN()
     gan.train(epochs=30000, batch_size=32, save_interval=30)
     generate_video()
