@@ -1,5 +1,6 @@
 from __future__ import print_function
 import keras, os, tables
+from keras.utils.io_utils import HDF5Matrix
 import numpy as np
 import matplotlib.pyplot as plt
 from keras.datasets import mnist
@@ -91,11 +92,11 @@ class GAN():
     def train(self, epochs, batch_size=128, save_interval=50):
 
         # Load the dataset
-        X_train = load_dataset()
+        # X_train = load_dataset()
 
         # Rescale -1 to 1
-        X_train = (X_train.astype(np.float32) - 127.5) / 127.5
-        X_train = np.expand_dims(X_train, axis=3)
+        # X_train = (X_train.astype(np.float32) - 127.5) / 127.5
+        # X_train = np.expand_dims(X_train, axis=3)
 
         half_batch = int(batch_size / 2)
 
@@ -105,9 +106,9 @@ class GAN():
             #  Train Discriminator
             # ---------------------
 
-            # Select a random half batch of images
-            idx = np.random.randint(0, X_train.shape[0], half_batch)
-            imgs = X_train[idx]
+            start_idx = (epoch*half_batch)     % DATASET_SIZE
+            end_idx   = ((epoch+1)*half_batch) % DATASET_SIZE
+            imgs, _, _, _ = load_data(None, start_idx, 0, end_idx, 0)
 
             noise = np.random.normal(0, 1, (half_batch, 100))
 
@@ -168,37 +169,39 @@ def generate_dataset():
     FILENAME = "car_dataset.h5"
     IMG_WIDTH = 512
     IMG_HEIGHT = 512
-    TARGET_SIZE = 5000
+    TARGET_SIZE = 50000
     os.chdir(ROOT)
-    f = tables.open_file(FILENAME, mode='w')
+    fd = tables.open_file(FILENAME, mode='w')
     atom = tables.Float64Atom()
-    dataset = f.create_earray(f.root, 'data', atom, (0, 3, IMG_WIDTH, IMG_HEIGHT))
+    filters = tables.Filters(complevel=5, complib='blosc')
+    dataset = fd.create_earray(f.root, 'data', atom, (0, 3, IMG_WIDTH, IMG_HEIGHT), filters=filters, expectedrows=TARGET_SIZE)
     
     os.chdir(ROOT + "/" + FOLDER)
     count = 0
-    for f in glob.glob("**/*.png", recursive=True):
-        img = get_rgb_from_rgba_img(f)
+    for f in glob.glob("*.jpg"):
+        img = Image.open(f)
         count += 1
         print("%d : %s" % (count, f))
         img = img.resize((IMG_WIDTH, IMG_HEIGHT))
         arr = np.asarray(img)
         arr = np.reshape(arr, (1, arr.shape[2], arr.shape[1], arr.shape[0]))
-        dataset.append(arr[:,0:-1,:,:])
+        dataset.append(arr)
 
-    f.close()
-    return load_dataset()
+    fd.close()
 
-def load_dataset():
+def normalize_data(X_train):
+    return (X_train.astype(np.float32) - 127.5) / 127.5
+
+def load_data(datapath, train_start, test_start, n_training_examples, n_test_examples):
+    global DATASET_SIZE
     FILENAME = "car_dataset.h5"
+    datapath = FILENAME if datapath is None else datapath
     os.chdir(ROOT)
-    try:
-        f = tables.open_file(FILENAME, mode='r')
-        dataset = f.root.data.read()
-        f.close()
-        return dataset
-    except IOError as e:
-        print(e)
-        return generate_dataset()
+    X_train = HDF5Matrix(datapath, 'data', train_start, train_start+n_training_examples, normalizer=normalize_data)
+    y_train = HDF5Matrix(datapath, 'data', train_start, train_start+n_training_examples)
+    X_test  = HDF5Matrix(datapath, 'data', test_start, test_start+n_test_examples, normalizer=normalize_data)
+    y_test  = HDF5Matrix(datapath, 'data', test_start, test_start+n_test_examples)
+    return X_train, y_train, X_test, y_test
 
 def get_rgb_from_rgba_img(img_path):
     from PIL import Image
@@ -219,7 +222,7 @@ def generate_video():
 
 if __name__ == '__main__':
     ROOT = os.getcwd()
-    # dataset = load_dataset()
+    DATASET_SIZE = 46751
     gan = GAN()
     gan.train(epochs=30000, batch_size=32, save_interval=30)
     generate_video()
