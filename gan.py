@@ -11,12 +11,18 @@ from keras import backend as K
 from keras.optimizers import Adam
 from keras.layers import LeakyReLU
 
+ROOT         = ""
+DATASET_SIZE = 46751
+IMG_WIDTH    = 32
+IMG_HEIGHT   = 32
+NOISE_INPUT  = 100
+
 class GAN():
     def __init__(self):
-        self.img_rows =  512
-        self.img_cols = 512
+        self.img_rows =  IMG_WIDTH
+        self.img_cols = IMG_HEIGHT
         self.channels = 3
-        self.img_shape = (self.channels, self.img_rows, self.img_cols)
+        self.img_shape = (self.channels, self.img_cols, self.img_rows)
 
         optimizer = Adam(0.0002, 0.5)
 
@@ -31,7 +37,7 @@ class GAN():
         self.generator.compile(loss='binary_crossentropy', optimizer=optimizer)
 
         # The generator takes noise as input and generated imgs
-        z = Input(shape=(200,))
+        z = Input(shape=(NOISE_INPUT,))
         img = self.generator(z)
 
         # For the combined model we will only train the generator
@@ -47,7 +53,7 @@ class GAN():
 
     def build_generator(self):
 
-        noise_shape = (200,)
+        noise_shape = (NOISE_INPUT,)
         
         model = Sequential()
 
@@ -72,7 +78,7 @@ class GAN():
 
     def build_discriminator(self):
 
-        img_shape = (self.channels, self.img_rows, self.img_cols)
+        img_shape = (self.channels, self.img_cols, self.img_rows)
         
         model = Sequential()
 
@@ -112,7 +118,7 @@ class GAN():
                 continue
             imgs, _, _, _ = load_data(None, start_idx, 0, half_batch, 0)
 
-            noise = np.random.normal(0, 1, (half_batch, 200))
+            noise = np.random.normal(0, 1, (half_batch, NOISE_INPUT))
 
             # Generate a half batch of new images
             gen_imgs = self.generator.predict(noise)
@@ -127,7 +133,7 @@ class GAN():
             #  Train Generator
             # ---------------------
 
-            noise = np.random.normal(0, 1, (batch_size, 200))
+            noise = np.random.normal(0, 1, (batch_size, NOISE_INPUT))
 
             # The generator wants the discriminator to label the generated samples
             # as valid (ones)
@@ -145,59 +151,23 @@ class GAN():
 
     def save_imgs(self, epoch, save_interval=30):
         r, c = 5, 5
-        noise = np.random.normal(0, 1, (1, 200))
+        noise = np.random.normal(0, 1, (1, NOISE_INPUT))
         gen_imgs = self.generator.predict(noise)
-        img_shape = (1, 512, 512, 3)
+        img_shape = (1, IMG_WIDTH, IMG_HEIGHT, 3)
         gen_imgs = np.reshape(gen_imgs, img_shape)
         # Rescale images 0 - 1
         gen_imgs = 0.5 * gen_imgs + 0.5
 
-        # fig, axs = plt.subplots(r, c)
-        # cnt = 0
-        # for i in range(r):
-        #     for j in range(c):
-        #         axs[i,j].imshow(gen_imgs[cnt, :,:,0], cmap='gray')
-        #         axs[i,j].axis('off')
-        #         cnt += 1
         plt.imshow(gen_imgs[0, :, :, :])
         plt.savefig("images/%d.jpg" % (epoch / save_interval))
         plt.close()
-
-def generate_dataset():
-    import os, glob
-    import numpy as np
-    from PIL import Image
-    import matplotlib.pyplot as plt
-    FOLDER = "car_images/"
-    FILENAME = "car_dataset.h5"
-    IMG_WIDTH = 512
-    IMG_HEIGHT = 512
-    TARGET_SIZE = 50000
-    os.chdir(ROOT)
-    fd = tables.open_file(FILENAME, mode='w')
-    atom = tables.Float64Atom()
-    filters = tables.Filters(complevel=5, complib='blosc')
-    dataset = fd.create_earray(f.root, 'data', atom, (0, 3, IMG_WIDTH, IMG_HEIGHT), filters=filters, expectedrows=TARGET_SIZE)
-    
-    os.chdir(ROOT + "/" + FOLDER)
-    count = 0
-    for f in glob.glob("*.jpg"):
-        img = Image.open(f)
-        count += 1
-        print("%d : %s" % (count, f))
-        img = img.resize((IMG_WIDTH, IMG_HEIGHT))
-        arr = np.asarray(img)
-        arr = np.reshape(arr, (1, arr.shape[2], arr.shape[1], arr.shape[0]))
-        dataset.append(arr)
-
-    fd.close()
 
 def normalize_data(X_train):
     return (X_train.astype(np.float32) - 127.5) / 127.5
 
 def load_data(datapath, train_start, test_start, n_training_examples, n_test_examples):
     global DATASET_SIZE
-    FILENAME = "D:\DeepLearning\car_dataset.h5"
+    FILENAME = "D:\DeepLearning\car_dataset_%dx%d.h5" % (IMG_WIDTH, IMG_HEIGTH)
     datapath = FILENAME if datapath is None else datapath
     os.chdir(ROOT)
     X_train = HDF5Matrix(datapath, 'data', train_start, train_start+n_training_examples, normalizer=normalize_data)
@@ -225,7 +195,6 @@ def generate_video():
 
 if __name__ == '__main__':
     ROOT = os.getcwd()
-    DATASET_SIZE = 46751
     gan = GAN()
     gan.train(epochs=30000, batch_size=16, save_interval=30)
     generate_video()
