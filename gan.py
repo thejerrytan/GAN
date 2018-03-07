@@ -16,7 +16,7 @@ class GAN():
         self.img_rows =  512
         self.img_cols = 512
         self.channels = 3
-        self.img_shape = (self.img_rows, self.img_cols, self.channels)
+        self.img_shape = (self.channels, self.img_rows, self.img_cols)
 
         optimizer = Adam(0.0002, 0.5)
 
@@ -31,7 +31,7 @@ class GAN():
         self.generator.compile(loss='binary_crossentropy', optimizer=optimizer)
 
         # The generator takes noise as input and generated imgs
-        z = Input(shape=(100,))
+        z = Input(shape=(200,))
         img = self.generator(z)
 
         # For the combined model we will only train the generator
@@ -47,7 +47,7 @@ class GAN():
 
     def build_generator(self):
 
-        noise_shape = (100,)
+        noise_shape = (200,)
         
         model = Sequential()
 
@@ -72,7 +72,7 @@ class GAN():
 
     def build_discriminator(self):
 
-        img_shape = (self.img_rows, self.img_cols, self.channels)
+        img_shape = (self.channels, self.img_rows, self.img_cols)
         
         model = Sequential()
 
@@ -108,9 +108,11 @@ class GAN():
 
             start_idx = (epoch*half_batch)     % DATASET_SIZE
             end_idx   = ((epoch+1)*half_batch) % DATASET_SIZE
-            imgs, _, _, _ = load_data(None, start_idx, 0, end_idx, 0)
+            if end_idx < start_idx: # wrap around, skip this iteration
+                continue
+            imgs, _, _, _ = load_data(None, start_idx, 0, half_batch, 0)
 
-            noise = np.random.normal(0, 1, (half_batch, 100))
+            noise = np.random.normal(0, 1, (half_batch, 200))
 
             # Generate a half batch of new images
             gen_imgs = self.generator.predict(noise)
@@ -125,7 +127,7 @@ class GAN():
             #  Train Generator
             # ---------------------
 
-            noise = np.random.normal(0, 1, (batch_size, 100))
+            noise = np.random.normal(0, 1, (batch_size, 200))
 
             # The generator wants the discriminator to label the generated samples
             # as valid (ones)
@@ -143,9 +145,10 @@ class GAN():
 
     def save_imgs(self, epoch, save_interval=30):
         r, c = 5, 5
-        noise = np.random.normal(0, 1, (1, 100))
+        noise = np.random.normal(0, 1, (1, 200))
         gen_imgs = self.generator.predict(noise)
-
+        img_shape = (1, 512, 512, 3)
+        gen_imgs = np.reshape(gen_imgs, img_shape)
         # Rescale images 0 - 1
         gen_imgs = 0.5 * gen_imgs + 0.5
 
@@ -156,8 +159,8 @@ class GAN():
         #         axs[i,j].imshow(gen_imgs[cnt, :,:,0], cmap='gray')
         #         axs[i,j].axis('off')
         #         cnt += 1
-        plt.imshow(gen_imgs[0, :, :, 0], cmap='gray')
-        plt.savefig("images/%d.png" % (epoch / save_interval))
+        plt.imshow(gen_imgs[0, :, :, :])
+        plt.savefig("images/%d.jpg" % (epoch / save_interval))
         plt.close()
 
 def generate_dataset():
@@ -194,7 +197,7 @@ def normalize_data(X_train):
 
 def load_data(datapath, train_start, test_start, n_training_examples, n_test_examples):
     global DATASET_SIZE
-    FILENAME = "car_dataset.h5"
+    FILENAME = "D:\DeepLearning\car_dataset.h5"
     datapath = FILENAME if datapath is None else datapath
     os.chdir(ROOT)
     X_train = HDF5Matrix(datapath, 'data', train_start, train_start+n_training_examples, normalizer=normalize_data)
@@ -214,8 +217,8 @@ def generate_video():
     import glob, os, subprocess
     os.chdir("images")
     subprocess.call([
-        'ffmpeg', '-start_number', '1', '-framerate', '10', '-i', '%d.png', '-r', '30', '-pix_fmt', 'yuv420p',
-        'mnist_gan.mp4'
+        'ffmpeg', '-start_number', '1', '-framerate', '10', '-i', '%d.jpg', '-r', '30', '-pix_fmt', 'yuv420p',
+        'car_gan.mp4'
     ])
     # for file_name in glob.glob("*.png"):
     #    os.remove(file_name)
@@ -224,5 +227,5 @@ if __name__ == '__main__':
     ROOT = os.getcwd()
     DATASET_SIZE = 46751
     gan = GAN()
-    gan.train(epochs=30000, batch_size=32, save_interval=30)
+    gan.train(epochs=30000, batch_size=16, save_interval=30)
     generate_video()
